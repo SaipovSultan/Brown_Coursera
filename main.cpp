@@ -1,4 +1,4 @@
-#include "xml.h"
+#include "json.h"
 #include "test_runner.h"
 
 #include <algorithm>
@@ -6,6 +6,7 @@
 #include <sstream>
 #include <vector>
 using namespace std;
+using namespace json;
 
 struct Spending {
     string category;
@@ -41,27 +42,29 @@ string MostExpensiveCategory(
                        compare_by_amount)->category;
 }
 
-vector<Spending> LoadFromXml(istream& input) {
+vector<Spending> LoadFromJson(istream& input) {
     Document document = Load(input);
     vector<Spending> spending;
-    for(const auto node : document.GetRoot().Children()){
-        if(node.Name() != "spend") continue;
-        spending.push_back(Spending{node.AttributeValue<string>("category"), node.AttributeValue<int>("amount")});
-    };
+    for(const auto node : document.GetRoot().AsArray()){
+        spending.push_back(Spending{
+            node.AsMap().at("category").AsString(),
+            node.AsMap().at("category").AsInt()
+        });
+    }
     return spending;
 }
 
-void TestLoadFromXml() {
-    istringstream xml_input(R"(<july>
-    <spend amount="2500" category="food"></spend>
-    <spend amount="1150" category="transport"></spend>
-    <spend amount="5780" category="restaurants"></spend>
-    <spend amount="7500" category="clothes"></spend>
-    <spend amount="23740" category="travel"></spend>
-    <spend amount="12000" category="sport"></spend>
-  </july>)");
+void TestLoadFromJson() {
+    istringstream json_input(R"([
+    {"amount": 2500, "category": "food"},
+    {"amount": 1150, "category": "transport"},
+    {"amount": 5780, "category": "restaurants"},
+    {"amount": 7500, "category": "clothes"},
+    {"amount": 23740, "category": "travel"},
+    {"amount": 12000, "category": "sport"}
+  ])");
 
-    const vector<Spending> spendings = LoadFromXml(xml_input);
+    const vector<Spending> spendings = LoadFromJson(json_input);
 
     const vector<Spending> expected = {
             {"food", 2500},
@@ -74,34 +77,33 @@ void TestLoadFromXml() {
     ASSERT_EQUAL(spendings, expected);
 }
 
-void TestXmlLibrary() {
-    istringstream xml_input(R"(<july>
-    <spend amount="2500" category="food"></spend>
-    <spend amount="23740" category="travel"></spend>
-    <spend amount="12000" category="sport"></spend>
-  </july>)");
+void TestJsonLibrary() {
 
-    Document doc = Load(xml_input);
-    const Node& root = doc.GetRoot();
-    ASSERT_EQUAL(root.Name(), "july");
-    ASSERT_EQUAL(root.Children().size(), 3u);
+    istringstream json_input(R"([
+    {"amount": 2500, "category": "food"},
+    {"amount": 1150, "category": "transport"},
+    {"amount": 12000, "category": "sport"}
+  ])");
 
-    const Node& food = root.Children().front();
-    ASSERT_EQUAL(food.AttributeValue<string>("category"), "food");
-    ASSERT_EQUAL(food.AttributeValue<int>("amount"), 2500);
+    Document doc = Load(json_input);
+    const vector<Node>& root = doc.GetRoot().AsArray();
+    ASSERT_EQUAL(root.size(), 3u);
 
-    const Node& sport = root.Children().back();
-    ASSERT_EQUAL(sport.AttributeValue<string>("category"), "sport");
-    ASSERT_EQUAL(sport.AttributeValue<int>("amount"), 12000);
+    const map<string, Node>& food = root.front().AsMap();
+    ASSERT_EQUAL(food.at("category").AsString(), "food");
+    ASSERT_EQUAL(food.at("amount").AsInt(), 2500);
 
-    Node july("july", {});
-    Node transport("spend", {{"category", "transport"}, {"amount", "1150"}});
-    july.AddChild(transport);
-    ASSERT_EQUAL(july.Children().size(), 1u);
+    const map<string, Node>& sport = root.back().AsMap();
+    ASSERT_EQUAL(sport.at("category").AsString(), "sport");
+    ASSERT_EQUAL(sport.at("amount").AsInt(), 12000);
+
+    Node transport(map<string, Node>{{"category", Node("transport")}, {"amount", Node(1150)}});
+    Node array_node(vector<Node>{transport});
+    ASSERT_EQUAL(array_node.AsArray().size(), 1u);
 }
 
 int main() {
     TestRunner tr;
-    RUN_TEST(tr, TestXmlLibrary);
-    RUN_TEST(tr, TestLoadFromXml);
+    RUN_TEST(tr, TestJsonLibrary);
+    RUN_TEST(tr, TestLoadFromJson);
 }
