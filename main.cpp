@@ -1,60 +1,191 @@
+#include "geo2d.h"
+#include "game_object.h"
+
 #include "test_runner.h"
-#include "stats_aggregator.h"
 
 #include <vector>
-#include <string>
-#include <map>
 #include <memory>
-#include <iostream>
-#include <unordered_map>
-#include <functional>
+
 using namespace std;
 
-void TestAll();
+class Unit : public GameObject{
+public:
+    explicit Unit(geo2d::Point position) : position(move(position)){}
+    ~Unit() = default;
+    geo2d::Point GetGeometry() const{
+        return position;
+    }
+    bool Collide(const GameObject& that) const;
+    bool CollideWith(const Unit& that) const;
+    bool CollideWith(const Building& that) const;
+    bool CollideWith(const Tower& that) const;
+    bool CollideWith(const Fence& that) const;
+private:
+    geo2d::Point position;
+};
 
-unique_ptr<StatsAggregator> ReadAggregators(istream& input) {
-    using namespace StatsAggregators;
-    const unordered_map<string, std::function<unique_ptr<StatsAggregator>()>> known_builders = {
-            {"sum", [] { return make_unique<Sum>(); }},
-            {"min", [] { return make_unique<Min>(); }},
-            {"max", [] { return make_unique<Max>(); }},
-            {"avg", [] { return make_unique<Average>(); }},
-            {"mode", [] { return make_unique<Mode>(); }}
+class Building : public GameObject{
+public:
+    ~Building() = default;
+    explicit Building(geo2d::Rectangle geometry) : geometry(move(geometry)) {}
+    geo2d::Rectangle GetGeometry() const{
+        return geometry;
+    }
+    bool Collide(const GameObject& that) const;
+    bool CollideWith(const Unit& that) const;
+    bool CollideWith(const Building& that) const;
+    bool CollideWith(const Tower& that) const;
+    bool CollideWith(const Fence& that) const;
+private:
+    geo2d::Rectangle geometry;
+};
+
+class Tower : public GameObject{
+public:
+    explicit Tower(geo2d::Circle geometry) : geometry(move(geometry)) {}
+    ~Tower() = default;
+    geo2d::Circle GetGeometry() const{
+        return geometry;
+    }
+    bool Collide(const GameObject& that) const;
+    bool CollideWith(const Unit& that) const;
+    bool CollideWith(const Building& that) const;
+    bool CollideWith(const Tower& that) const;
+    bool CollideWith(const Fence& that) const;
+private:
+    geo2d::Circle geometry;
+};
+
+class Fence : public GameObject{
+public:
+    explicit Fence(geo2d::Segment geometry) : geometry(move(geometry)) {}
+    ~Fence() = default;
+    geo2d::Segment GetGeometry() const{
+        return geometry;
+    }
+    bool Collide(const GameObject& that) const;
+    bool CollideWith(const Unit& that) const;
+    bool CollideWith(const Building& that) const;
+    bool CollideWith(const Tower& that) const;
+    bool CollideWith(const Fence& that) const;
+private:
+    geo2d::Segment geometry;
+};
+
+bool Unit::Collide(const GameObject& that) const {
+    return that.CollideWith(*this);
+}
+bool Unit::CollideWith(const Unit& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Unit::CollideWith(const Building& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Unit::CollideWith(const Tower& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Unit::CollideWith(const Fence& that) const{
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Building::Collide(const GameObject& that) const {
+    return that.CollideWith(*this);
+}
+bool Building::CollideWith(const Unit& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Building::CollideWith(const Building& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Building::CollideWith(const Tower& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Building::CollideWith(const Fence& that) const{
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Tower::Collide(const GameObject& that) const {
+    return that.CollideWith(*this);
+}
+bool Tower::CollideWith(const Unit& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Tower::CollideWith(const Building& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Tower::CollideWith(const Tower& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Tower::CollideWith(const Fence& that) const{
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Fence::Collide(const GameObject& that) const {
+    return that.CollideWith(*this);
+}
+bool Fence::CollideWith(const Unit& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Fence::CollideWith(const Building& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Fence::CollideWith(const Tower& that) const {
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+bool Fence::CollideWith(const Fence& that) const{
+    return geo2d::Collide(GetGeometry(), that.GetGeometry());
+}
+
+
+bool Collide(const GameObject& first, const GameObject& second) {
+    return first.Collide(second);
+}
+
+void TestAddingNewObjectOnMap() {
+    using namespace geo2d;
+
+    const vector<shared_ptr<GameObject>> game_map = {
+            make_shared<Unit>(Point{3, 3}),
+            make_shared<Unit>(Point{5, 5}),
+            make_shared<Unit>(Point{3, 7}),
+            make_shared<Fence>(Segment{{7, 3}, {9, 8}}),
+            make_shared<Tower>(Circle{Point{9, 4}, 1}),
+            make_shared<Tower>(Circle{Point{10, 7}, 1}),
+            make_shared<Building>(Rectangle{{11, 4}, {14, 6}})
     };
 
-    auto result = make_unique<Composite>();
+    for (size_t i = 0; i < game_map.size(); ++i) {
+        Assert(
+                Collide(*game_map[i], *game_map[i]),
+                "An object doesn't collide with itself: " + to_string(i)
+        );
 
-    int aggr_count;
-    input >> aggr_count;
-
-    string line;
-    for (int i = 0; i < aggr_count; ++i) {
-        input >> line;
-        result->Add(known_builders.at(line)());
+        for (size_t j = 0; j < i; ++j) {
+            Assert(
+                    !Collide(*game_map[i], *game_map[j]),
+                    "Unexpected collision found " + to_string(i) + ' ' + to_string(j)
+            );
+        }
     }
 
-    return result;
+    auto new_warehouse = make_shared<Building>(Rectangle{{4, 3}, {9, 6}});
+    ASSERT(!Collide(*new_warehouse, *game_map[0]));
+    ASSERT( Collide(*new_warehouse, *game_map[1]));
+    ASSERT(!Collide(*new_warehouse, *game_map[2]));
+    ASSERT( Collide(*new_warehouse, *game_map[3]));
+    ASSERT( Collide(*new_warehouse, *game_map[4]));
+    ASSERT(!Collide(*new_warehouse, *game_map[5]));
+    ASSERT(!Collide(*new_warehouse, *game_map[6]));
+
+    auto new_defense_tower = make_shared<Tower>(Circle{{8, 2}, 2});
+    ASSERT(!Collide(*new_defense_tower, *game_map[0]));
+    ASSERT(!Collide(*new_defense_tower, *game_map[1]));
+    ASSERT(!Collide(*new_defense_tower, *game_map[2]));
+    ASSERT( Collide(*new_defense_tower, *game_map[3]));
+    ASSERT( Collide(*new_defense_tower, *game_map[4]));
+    ASSERT(!Collide(*new_defense_tower, *game_map[5]));
+    ASSERT(!Collide(*new_defense_tower, *game_map[6]));
 }
 
 int main() {
-    TestAll();
-
-    auto stats_aggregator = ReadAggregators(cin);
-
-    for (int value; cin >> value; ) {
-        stats_aggregator->Process(value);
-    }
-    stats_aggregator->PrintValue(cout);
-
-    return 0;
-}
-
-void TestAll() {
     TestRunner tr;
-    RUN_TEST(tr, StatsAggregators::TestSum);
-    RUN_TEST(tr, StatsAggregators::TestMin);
-    RUN_TEST(tr, StatsAggregators::TestMax);
-    RUN_TEST(tr, StatsAggregators::TestAverage);
-    RUN_TEST(tr, StatsAggregators::TestMode);
-    RUN_TEST(tr, StatsAggregators::TestComposite);
+    RUN_TEST(tr, TestAddingNewObjectOnMap);
+    return 0;
 }
