@@ -5,44 +5,38 @@
 #include <string>
 #include <unordered_map>
 #include <map>
-using namespace std;
 
-namespace json {
+namespace Json {
 
     class Node {
     public:
-        explicit Node(vector<Node> array);
-
-        explicit Node(map<string, Node> map);
-
+        explicit Node(std::vector<Node> array);
+        explicit Node(std::map<std::string, Node> map);
         explicit Node(int value);
+        explicit Node(std::string value);
 
-        explicit Node(string value);
-
-        const vector<Node> &AsArray() const;
-
-        const map<string, Node> &AsMap() const;
-
+        const std::vector<Node>& AsArray() const;
+        const std::map<std::string, Node>& AsMap() const;
         int AsInt() const;
-
-        const string &AsString() const;
+        const std::string& AsString() const;
 
     private:
-        vector<Node> as_array;
-        map<string, Node> as_map;
+        std::vector<Node> as_array;
+        std::map<std::string, Node> as_map;
         int as_int;
-        string as_string;
+        std::string as_string;
     };
 
     class Document {
     public:
         explicit Document(Node root);
 
-        const Node &GetRoot() const;
+        const Node& GetRoot() const;
 
     private:
         Node root;
     };
 
-    Document Load(istream &input);
+    Document Load(std::istream& input);
+
 }

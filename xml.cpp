@@ -4,7 +4,8 @@
 #include <iostream>
 using namespace std;
 
-namespace xml {
+namespace Xml {
+
     pair<string_view, string_view> Split(string_view line, char by) {
         size_t pos = line.find(by);
         string_view left = line.substr(0, pos);
@@ -33,18 +34,18 @@ namespace xml {
         return value;
     }
 
-    Node LoadNode(istream &input) {
+    Node LoadNode(istream& input) {
         string root_name;
         getline(input, root_name);
 
         Node root(root_name.substr(1, root_name.size() - 2), {});
-        for (string line; getline(input, line) && Lstrip(line)[1] != '/';) {
-            auto[node_name, attrs] = Split(Lstrip(line), ' ');
+        for (string line; getline(input, line) && line[1] != '/'; ) {
+            auto [node_name, attrs] = Split(Lstrip(line), ' ');
             attrs = Split(attrs, '>').first;
             unordered_map<string, string> node_attrs;
             while (!attrs.empty()) {
-                auto[head, tail] = Split(attrs, ' ');
-                auto[name, value] = Split(head, '=');
+                auto [head, tail] = Split(attrs, ' ');
+                auto [name, value] = Split(head, '=');
                 if (!name.empty() && !value.empty()) {
                     node_attrs[string(Unquote(name))] = string(Unquote(value));
                 }
@@ -56,7 +57,7 @@ namespace xml {
         return root;
     }
 
-    Document Load(istream &input) {
+    Document Load(istream& input) {
         return Document{LoadNode(input)};
     }
 
@@ -65,14 +66,14 @@ namespace xml {
     ) : name(move(name)), attrs(move(attrs)) {
     }
 
-    const vector<Node> &Node::Children() const {
+    const vector<Node>& Node::Children() const {
         return children;
     }
 
     Document::Document(Node root) : root(move(root)) {
     }
 
-    const Node &Document::GetRoot() const {
+    const Node& Document::GetRoot() const {
         return root;
     }
 
@@ -83,4 +84,5 @@ namespace xml {
     string_view Node::Name() const {
         return name;
     }
+
 }
