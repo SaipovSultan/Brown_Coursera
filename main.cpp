@@ -1,259 +1,195 @@
 #include "test_runner.h"
 #include "profile.h"
-#include "synchronized.h"
-
-#include <future>
-#include <mutex>
-#include <unordered_map>
+#include "polynomial.h"
 #include <vector>
-#include <utility>
+#include <iostream>
 #include <algorithm>
-#include <random>
+
 using namespace std;
 
-template <typename K, typename V, typename Hash = std::hash<K>>
-class ConcurrentMap {
-public:
-    using MapType = unordered_map<K, V, Hash>;
-
-    struct WriteAccess {
-        std::lock_guard<std::mutex> lock;
-        V& ref_to_value;
-    };
-
-    struct ReadAccess {
-        std::lock_guard<std::mutex> lock;
-        const V& ref_to_value;
-    };
-
-    explicit ConcurrentMap(size_t bucket_count) : bucket_count(bucket_count), buckets(bucket_count), mtxs(bucket_count){}
-
-    WriteAccess operator[](const K& key){
-        size_t index_bucket = hasher(key) % bucket_count;
-        MapType& bucket = buckets[index_bucket];
-        return {std::lock_guard<std::mutex>(mtxs[index_bucket]), bucket[key]};
+template<typename T>
+void PrintCoeff(std::ostream& out, int i, const T& coef, bool printed) {
+    bool coeffPrinted = false;
+    if (coef == 1 && i > 0) {
+        out << (printed ? "+" : "");
+    } else if (coef == -1 && i > 0) {
+        out << "-";
+    } else if (coef >= 0 && printed) {
+        out << "+" << coef;
+        coeffPrinted = true;
+    } else {
+        out << coef;
+        coeffPrinted = true;
     }
-
-    ReadAccess At(const K& key) const{
-        size_t index_bucket = hasher(key) % bucket_count;
-        const MapType& bucket = buckets[index_bucket];
-        return {std::lock_guard<std::mutex>(mtxs[index_bucket]), bucket.at(key)};
+    if (i > 0) {
+        out << (coeffPrinted ? "*" : "") << "x";
     }
-
-    bool Has(const K& key) const{
-        size_t index_bucket = hasher(key) % bucket_count;
-        std::lock_guard<mutex> lock(mtxs[index_bucket]);
-        const MapType& bucket = buckets[index_bucket];
-        return bucket.count(key) != 0;
-    }
-
-    MapType BuildOrdinaryMap() const{
-        MapType dict;
-        for(size_t index_bucket = 0;index_bucket < bucket_count;++index_bucket){
-            std::lock_guard<mutex> lock(mtxs[index_bucket]);
-            for(const auto& [key, value] : buckets[index_bucket]){
-                dict[key] = value;
-            }
-        }
-        return dict;
-    }
-
-private:
-    size_t bucket_count;
-    std::vector<MapType> buckets;
-    mutable std::vector<std::mutex> mtxs;
-    Hash hasher;
-};
-
-void RunConcurrentUpdates(
-        ConcurrentMap<int, int>& cm, size_t thread_count, int key_count
-) {
-    auto kernel = [&cm, key_count](int seed) {
-        vector<int> updates(key_count);
-        iota(begin(updates), end(updates), -key_count / 2);
-        shuffle(begin(updates), end(updates), default_random_engine(seed));
-
-        for (int i = 0; i < 2; ++i) {
-            for (auto key : updates) {
-                cm[key].ref_to_value++;
-            }
-        }
-    };
-
-    vector<future<void>> futures;
-    for (size_t i = 0; i < thread_count; ++i) {
-        futures.push_back(async(kernel, i));
+    if (i > 1) {
+        out << "^" << i;
     }
 }
 
-void TestConcurrentUpdate() {
-    const size_t thread_count = 3;
-    const size_t key_count = 50000;
 
-    ConcurrentMap<int, int> cm(thread_count);
-    RunConcurrentUpdates(cm, thread_count, key_count);
-
-    const auto result = std::as_const(cm).BuildOrdinaryMap();
-    ASSERT_EQUAL(result.size(), key_count);
-    for (auto& [k, v] : result) {
-        AssertEqual(v, 6, "Key = " + to_string(k));
+template <typename T>
+std::ostream& operator <<(std::ostream& out, const Polynomial<T>& p) {
+    bool printed = false;
+    for (int i = p.Degree(); i >= 0; --i) {
+        if (p[i] != 0) {
+            PrintCoeff(out, i, p[i], printed);
+            printed = true;
+        }
     }
+    return out;
 }
 
-void TestReadAndWrite() {
-    ConcurrentMap<size_t, string> cm(5);
-
-    auto updater = [&cm] {
-        for (size_t i = 0; i < 50000; ++i) {
-            cm[i].ref_to_value += 'a';
-        }
-    };
-    auto reader = [&cm] {
-        vector<string> result(50000);
-        for (size_t i = 0; i < result.size(); ++i) {
-            result[i] = cm[i].ref_to_value;
-        }
-        return result;
-    };
-
-    auto u1 = async(updater);
-    auto r1 = async(reader);
-    auto u2 = async(updater);
-    auto r2 = async(reader);
-
-    u1.get();
-    u2.get();
-
-    for (auto f : {&r1, &r2}) {
-        auto result = f->get();
-        ASSERT(all_of(result.begin(), result.end(), [](const string& s) {
-            return s.empty() || s == "a" || s == "aa";
-        }));
-    }
+template <typename T>
+Polynomial<T> operator +(Polynomial<T> lhs, const Polynomial<T>& rhs) {
+    lhs += rhs;
+    return lhs;
 }
 
-void TestSpeedup() {
+template <typename T>
+Polynomial<T> operator -(Polynomial<T> lhs, const Polynomial<T>& rhs) {
+    lhs -= rhs;
+    return lhs;
+}
+
+void TestCreation() {
     {
-        ConcurrentMap<int, int> single_lock(1);
-
-        LOG_DURATION("Single lock");
-        RunConcurrentUpdates(single_lock, 4, 50000);
+        Polynomial<int> default_constructed;
+        ASSERT_EQUAL(default_constructed.Degree(), 0);
+        ASSERT_EQUAL(default_constructed[0], 0);
     }
     {
-        ConcurrentMap<int, int> many_locks(100);
-
-        LOG_DURATION("100 locks");
-        RunConcurrentUpdates(many_locks, 4, 50000);
+        Polynomial<double> from_vector({1.0, 2.0, 3.0, 4.0});
+        ASSERT_EQUAL(from_vector.Degree(), 3);
+        ASSERT_EQUAL(from_vector[0], 1.0);
+        ASSERT_EQUAL(from_vector[1], 2.0);
+        ASSERT_EQUAL(from_vector[2], 3.0);
+        ASSERT_EQUAL(from_vector[3], 4.0);
     }
+    {
+        const vector<int> coeffs = {4, 9, 7, 8, 12};
+        Polynomial<int> from_iterators(begin(coeffs), end(coeffs));
+        ASSERT_EQUAL(from_iterators.Degree(), coeffs.size() - 1);
+        ASSERT(std::equal(cbegin(from_iterators), cend(from_iterators), begin(coeffs)));
+    }
+}
+
+void TestEqualComparability() {
+    Polynomial<int> p1({9, 3, 2, 8});
+    Polynomial<int> p2({9, 3, 2, 8});
+    Polynomial<int> p3({1, 2, 4, 8});
+
+    ASSERT_EQUAL(p1, p2);
+    ASSERT(p1 != p3);
+}
+
+void TestAddition() {
+    Polynomial<int> p1({9, 3, 2, 8});
+    Polynomial<int> p2({1, 2, 4});
+
+    p1 += p2;
+    ASSERT_EQUAL(p1, Polynomial<int>({10, 5, 6, 8}));
+
+    auto p3 = p1 + p2;
+    ASSERT_EQUAL(p3, Polynomial<int>({11, 7, 10, 8}));
+
+    p3 += Polynomial<int>({-11, 1, -10, -8});
+    ASSERT_EQUAL(p3.Degree(), 1);
+    const Polynomial<int> expected{{0, 8}};
+    ASSERT_EQUAL(p3, expected);
+}
+
+void TestSubtraction() {
+    Polynomial<int> p1({9, 3, 2, 8});
+    Polynomial<int> p2({1, 2, 4});
+
+    p1 -= p2;
+    ASSERT_EQUAL(p1, Polynomial<int>({8, 1, -2, 8}));
+
+    auto p3 = p1 - p2;
+    ASSERT_EQUAL(p3, Polynomial<int>({7, -1, -6, 8}));
+
+    p3 -= Polynomial<int>({7, -5, -6, 8});
+    ASSERT_EQUAL(p3.Degree(), 1);
+    const Polynomial<int> expected{{0, 4}};
+    ASSERT_EQUAL(p3, expected);
+}
+
+void TestEvaluation() {
+    const Polynomial<int> default_constructed;
+    ASSERT_EQUAL(default_constructed(0), 0);
+    ASSERT_EQUAL(default_constructed(1), 0);
+    ASSERT_EQUAL(default_constructed(-1), 0);
+    ASSERT_EQUAL(default_constructed(198632), 0);
+
+    const Polynomial<int64_t> cubic({1, 1, 1, 1});
+    ASSERT_EQUAL(cubic(0), 1);
+    ASSERT_EQUAL(cubic(1), 4);
+    ASSERT_EQUAL(cubic(2), 15);
+    ASSERT_EQUAL(cubic(21), 9724);
 }
 
 void TestConstAccess() {
-    const unordered_map<int, string> expected = {
-            {1, "one"},
-            {2, "two"},
-            {3, "three"},
-            {31, "thirty one"},
-            {127, "one hundred and twenty seven"},
-            {1598, "fifteen hundred and ninety eight"}
-    };
+    const Polynomial<int> poly(std::initializer_list<int> {1, 2, 3, 4, 5});
 
-    const ConcurrentMap<int, string> cm = [&expected] {
-        ConcurrentMap<int, string> result(3);
-        for (const auto& [k, v] : expected) {
-            result[k].ref_to_value = v;
+    ASSERT_EQUAL(poly[0], 1);
+    ASSERT_EQUAL(poly[1], 2);
+    ASSERT_EQUAL(poly[2], 3);
+    ASSERT_EQUAL(poly[3], 4);
+    ASSERT_EQUAL(poly[4], 5);
+    ASSERT_EQUAL(poly[5], 0);
+    ASSERT_EQUAL(poly[6], 0);
+    ASSERT_EQUAL(poly[608], 0);
+}
+
+void TestNonconstAccess() {
+    Polynomial<int> poly;
+
+    poly[0] = 1;
+    poly[3] = 12;
+    poly[5] = 4;
+    ASSERT_EQUAL(poly.Degree(), 5);
+
+    ASSERT_EQUAL(poly[0], 1);
+    ASSERT_EQUAL(poly[1], 0);
+    ASSERT_EQUAL(poly[2], 0);
+    ASSERT_EQUAL(poly[3], 12);
+    ASSERT_EQUAL(poly[4], 0);
+    ASSERT_EQUAL(poly[5], 4);
+    ASSERT_EQUAL(poly[6], 0);
+    ASSERT_EQUAL(poly[608], 0);
+
+    ASSERT_EQUAL(poly.Degree(), 5);
+
+    poly[608] = 0;
+    ASSERT_EQUAL(poly.Degree(), 5);
+
+    {
+        LOG_DURATION("Iteration over const");
+        for (size_t i = 10; i < 50000; ++i) {
+            ASSERT_EQUAL(std::as_const(poly)[i], 0);
+            ASSERT_EQUAL(poly.Degree(), 5);
         }
-        return result;
-    }();
-
-    vector<future<string>> futures;
-    for (int i = 0; i < 10; ++i) {
-        futures.push_back(async([&cm, i] {
-            try {
-                return cm.At(i).ref_to_value;
-            } catch (exception&) {
-                return string();
-            }
-        }));
     }
-    futures.clear();
-
-    ASSERT_EQUAL(cm.BuildOrdinaryMap(), expected);
-}
-
-void TestStringKeys() {
-    const unordered_map<string, string> expected = {
-            {"one", "ONE"},
-            {"two", "TWO"},
-            {"three", "THREE"},
-            {"thirty one", "THIRTY ONE"},
-    };
-
-    const ConcurrentMap<string, string> cm = [&expected] {
-        ConcurrentMap<string, string> result(2);
-        for (const auto& [k, v] : expected) {
-            result[k].ref_to_value = v;
+    {
+        LOG_DURATION("Iteration over non-const");
+        for (size_t i = 10; i < 50000; ++i) {
+            ASSERT_EQUAL(poly[i], 0);
+            ASSERT_EQUAL(poly.Degree(), 5);
         }
-        return result;
-    }();
-
-    ASSERT_EQUAL(cm.BuildOrdinaryMap(), expected);
-}
-
-struct Point {
-    int x, y;
-};
-
-struct PointHash {
-    size_t operator()(Point p) const {
-        std::hash<int> h;
-        return h(p.x) * 3571 + h(p.y);
     }
-};
-
-bool operator==(Point lhs, Point rhs) {
-    return lhs.x == rhs.x && lhs.y == rhs.y;
-}
-
-void TestUserType() {
-    ConcurrentMap<Point, size_t, PointHash> point_weight(5);
-
-    vector<future<void>> futures;
-    for (int i = 0; i < 1000; ++i) {
-        futures.push_back(async([&point_weight, i] {
-            point_weight[Point{i, i}].ref_to_value = i;
-        }));
-    }
-
-    futures.clear();
-
-    for (int i = 0; i < 1000; ++i) {
-        ASSERT_EQUAL(point_weight.At(Point{i, i}).ref_to_value, i);
-    }
-
-    const auto weights = point_weight.BuildOrdinaryMap();
-    for (int i = 0; i < 1000; ++i) {
-        ASSERT_EQUAL(weights.at(Point{i, i}), i);
-    }
-}
-
-void TestHas() {
-    ConcurrentMap<int, int> cm(2);
-    cm[1].ref_to_value = 100;
-    cm[2].ref_to_value = 200;
-
-    const auto& const_map = std::as_const(cm);
-    ASSERT(const_map.Has(1));
-    ASSERT(const_map.Has(2));
-    ASSERT(!const_map.Has(3));
 }
 
 int main() {
     TestRunner tr;
-    RUN_TEST(tr, TestConcurrentUpdate);
-    RUN_TEST(tr, TestReadAndWrite);
-    RUN_TEST(tr, TestSpeedup);
+    RUN_TEST(tr, TestCreation);
+    RUN_TEST(tr, TestEqualComparability);
+    RUN_TEST(tr, TestAddition);
+    RUN_TEST(tr, TestSubtraction);
+    RUN_TEST(tr, TestEvaluation);
     RUN_TEST(tr, TestConstAccess);
-    RUN_TEST(tr, TestStringKeys);
-    RUN_TEST(tr, TestUserType);
-    RUN_TEST(tr, TestHas);
+    RUN_TEST(tr, TestNonconstAccess);
+    return 0;
 }
