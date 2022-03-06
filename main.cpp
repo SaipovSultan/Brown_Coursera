@@ -1,35 +1,84 @@
 #include "test_runner.h"
-#include "lazyvalue.h"
-
+#include "synchronized.h"
+#include <numeric>
+#include <vector>
 #include <string>
+#include <future>
+#include <mutex>
+#include <queue>
 using namespace std;
 
+void TestConcurrentUpdate() {
+    Synchronized<string> common_string;
 
-void UseExample() {
-    const string big_string = "Giant amounts of memory";
+    const size_t add_count = 50000;
+    auto updater = [&common_string, add_count] {
+        for (size_t i = 0; i < add_count; ++i) {
+            auto access = common_string.GetAccess();
+            access.ref_to_value += 'a';
+        }
+    };
 
-    LazyValue<string> lazy_string([&big_string] { return big_string; });
+    auto f1 = async(updater);
+    auto f2 = async(updater);
 
-    ASSERT(!lazy_string.HasValue());
-    ASSERT_EQUAL(lazy_string.Get(), big_string);
-    ASSERT_EQUAL(lazy_string.Get(), big_string);
+    f1.get();
+    f2.get();
+
+    ASSERT_EQUAL(common_string.GetAccess().ref_to_value.size(), 2 * add_count);
 }
 
-void TestInitializerIsntCalled() {
-    bool called = false;
+vector<int> Consume(Synchronized<deque<int>>& common_queue) {
+    vector<int> got;
 
-    {
-        LazyValue<int> lazy_int([&called] {
-            called = true;
-            return 0;
-        });
+    for (;;) {
+        deque<int> q;
+
+        {
+            auto access = common_queue.GetAccess();
+            q = move(access.ref_to_value);
+        }
+
+        for (int item : q) {
+            if (item > 0) {
+                got.push_back(item);
+            } else {
+                return got;
+            }
+        }
     }
-    ASSERT(!called);
+}
+
+void Log(const Synchronized<deque<int>>& common_queue, ostream& out) {
+    for (int i = 0; i < 100; ++i) {
+        out << "Queue size is " << common_queue.GetAccess().ref_to_value.size() << '\n';
+    }
+}
+
+void TestProducerConsumer() {
+    Synchronized<deque<int>> common_queue;
+    ostringstream log;
+
+    auto consumer = async(Consume, ref(common_queue));
+    auto logger = async(Log, cref(common_queue), ref(log));
+
+    const size_t item_count = 100000;
+    for (size_t i = 1; i <= item_count; ++i) {
+        common_queue.GetAccess().ref_to_value.push_back(i);
+    }
+    common_queue.GetAccess().ref_to_value.push_back(-1);
+
+    vector<int> expected(item_count);
+    iota(begin(expected), end(expected), 1);
+    ASSERT_EQUAL(consumer.get(), expected);
+
+    logger.get();
+    const string logs = log.str();
+    ASSERT(!logs.empty());
 }
 
 int main() {
     TestRunner tr;
-    RUN_TEST(tr, UseExample);
-    RUN_TEST(tr, TestInitializerIsntCalled);
-    return 0;
+    RUN_TEST(tr, TestConcurrentUpdate);
+    RUN_TEST(tr, TestProducerConsumer);
 }

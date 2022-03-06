@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 #include <optional>
+#include <mutex>
 
 template <typename T>
 class LazyValue {
@@ -13,7 +14,7 @@ public:
     }
 
     const T& Get() const {
-        if (!HasValue()) {
+        if (std::lock_guard lock(mtx);!HasValue()) {
             value = init();
         }
         return *value;
@@ -22,4 +23,5 @@ public:
 private:
     std::function<T()> init;
     mutable std::optional<T> value;
+    mutable std::mutex mtx;
 };
