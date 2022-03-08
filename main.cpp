@@ -1,35 +1,55 @@
+#include "animals.h"
 #include "test_runner.h"
-#include "objectpool.h"
-#include <algorithm>
+
 #include <iostream>
+#include <stdexcept>
 #include <string>
+#include <sstream>
+#include <vector>
+#include <memory>
 
 using namespace std;
 
-void TestObjectPool() {
-    ObjectPool<string> pool;
+using Zoo = vector<unique_ptr<Animal>>;
 
-    auto p1 = pool.Allocate();
-    auto p2 = pool.Allocate();
-    auto p3 = pool.Allocate();
+Zoo CreateZoo(istream& in) {
+    Zoo zoo;
+    string word;
+    while (in >> word) {
+        if (word == "Tiger") {
+            zoo.push_back(make_unique<Tiger>());
+        } else if (word == "Wolf") {
+            zoo.push_back(make_unique<Wolf>());
+        } else if (word == "Fox") {
+            zoo.push_back(make_unique<Fox>());
+        } else {
+            throw runtime_error("Unknown animal!");
+        }
+    }
+    return zoo;
+}
 
-    *p1 = "first";
-    *p2 = "second";
-    *p3 = "third";
+void Process(const Zoo& zoo, ostream& out) {
+    for (const auto& animal : zoo) {
+        out << animal->Voice() << "\n";
+    }
+}
 
-    pool.Deallocate(p2);
-    ASSERT_EQUAL(*pool.Allocate(), "second");
+void TestZoo() {
+    istringstream input("Tiger Wolf Fox Tiger");
+    ostringstream output;
+    Process(CreateZoo(input), output);
 
-    pool.Deallocate(p3);
-    pool.Deallocate(p1);
-    ASSERT_EQUAL(*pool.Allocate(), "third");
-    ASSERT_EQUAL(*pool.Allocate(), "first");
+    const string expected =
+            "Rrrr\n"
+            "Wooo\n"
+            "Tyaf\n"
+            "Rrrr\n";
 
-    pool.Deallocate(p1);
+    ASSERT_EQUAL(output.str(), expected);
 }
 
 int main() {
     TestRunner tr;
-    RUN_TEST(tr, TestObjectPool);
-    return 0;
+    RUN_TEST(tr, TestZoo);
 }
