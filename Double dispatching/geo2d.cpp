@@ -115,6 +115,7 @@ namespace geo2d {
                 ScalarProduct(Vector{s.p1, s.p2}, Vector{s.p1, c.center}) >= 0 &&
                 ScalarProduct(Vector{s.p2, s.p1}, Vector{s.p2, c.center}) >= 0
                 ) {
+
             uint64_t double_triangle_square = abs(Vector{s.p1, s.p2} * Vector{s.p1, c.center});
             return Sqr(double_triangle_square) <= Sqr<uint64_t>(c.radius) * DistanceSquared(s.p1, s.p2);
         } else {

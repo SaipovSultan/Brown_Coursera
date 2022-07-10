@@ -1,5 +1,30 @@
 #pragma once
 #include <vector>
+#include <iostream>
+#include <algorithm>
+#include <functional>
+
+template<typename T>
+void PrintCoeff(std::ostream& out, int i, const T& coef, bool printed) {
+    bool coeffPrinted = false;
+    if (coef == 1 && i > 0) {
+        out << (printed ? "+" : "");
+    } else if (coef == -1 && i > 0) {
+        out << "-";
+    } else if (coef >= 0 && printed) {
+        out << "+" << coef;
+        coeffPrinted = true;
+    } else {
+        out << coef;
+        coeffPrinted = true;
+    }
+    if (i > 0) {
+        out << (coeffPrinted ? "*" : "") << "x";
+    }
+    if (i > 1) {
+        out << "^" << i;
+    }
+}
 
 template<typename T>
 class Polynomial {
@@ -11,23 +36,7 @@ private:
             coeffs_.pop_back();
         }
     }
-    template <typename U>
-    class IndexProxy{
-    public:
-        IndexProxy(Polynomial<U>& poly, size_t degree) : poly(poly), degree(degree) {}
-        operator U() const{
-            return std::as_const(poly)[degree];
-        }
-        IndexProxy& operator=(U coeff){
-            poly.coeffs_.resize(std::max(poly.coeffs_.size(), degree + 1));
-            poly.coeffs_[degree] = coeff;
-            poly.Shrink();
-            return *this;
-        }
-    private:
-        Polynomial<U>& poly;
-        size_t degree;
-    };
+
 public:
     Polynomial() = default;
     Polynomial(std::vector<T> coeffs) : coeffs_(std::move(coeffs)) {
@@ -77,8 +86,30 @@ public:
         return degree < coeffs_.size() ? coeffs_[degree] : 0;
     }
 
-    IndexProxy<T> operator [](size_t degree) {
-        return {*this, degree};
+    class IndexProxy {
+    public:
+        IndexProxy(Polynomial& poly, size_t degree) : poly(poly), degree(degree){}
+
+        operator T() const{
+            return std::as_const(poly)[degree];
+        }
+
+        IndexProxy& operator =(T value) {
+            if (poly.coeffs_.size() <= degree) {
+                poly.coeffs_.resize(degree + 1u);
+            }
+            poly.coeffs_[degree] = value;
+            poly.Shrink();
+            return *this;
+        }
+
+    private:
+        Polynomial& poly;
+        size_t degree;
+    };
+
+    IndexProxy operator [](size_t degree) {
+        return IndexProxy(*this, degree);
     }
 
     T operator ()(const T& x) const {
@@ -100,3 +131,28 @@ public:
         return coeffs_.cend();
     }
 };
+
+template <typename T>
+std::ostream& operator <<(std::ostream& out, const Polynomial<T>& p) {
+    bool printed = false;
+    for (int i = p.Degree(); i >= 0; --i) {
+        if (p[i] != 0) {
+            PrintCoeff(out, i, p[i], printed);
+            printed = true;
+        }
+    }
+    return out;
+}
+
+template <typename T>
+Polynomial<T> operator +(Polynomial<T> lhs, const Polynomial<T>& rhs) {
+    lhs += rhs;
+    return lhs;
+}
+
+template <typename T>
+Polynomial<T> operator -(Polynomial<T> lhs, const Polynomial<T>& rhs) {
+    lhs -= rhs;
+    return lhs;
+}
+
